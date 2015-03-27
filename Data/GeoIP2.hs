@@ -5,6 +5,10 @@
 module Data.GeoIP2 (
     makeGeoDB
   , findGeoData
+  , GeoDB
+  , geoLanguages
+  , GeoResult
+  , geoContinent, geoCountryISO, geoCountry, geoCity, geoSubdivisions, geoLocation
 ) where
 
 import Control.Monad (when, unless)
@@ -15,9 +19,9 @@ import Data.Int
 import Data.Binary
 import qualified Data.Text as T
 import Data.IP (IP(..), ipv4ToIPv6)
-import Control.Applicative ((<$>))
-import Control.Monad (mapM)
+import Control.Applicative ((<$>), (<*>))
 import qualified Data.Map as Map
+import Data.Maybe (mapMaybe, fromMaybe)
 
 import Data.GeoIP2.Fields
 import Data.GeoIP2.SearchTree
@@ -34,7 +38,7 @@ data GeoDB = GeoDB {
 }
 
 getHeaderBytes :: BS.ByteString -> BS.ByteString
-getHeaderBytes = mdebug "test" <$> lastsubstring "\xab\xcd\xefMaxMind.com"
+getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
   where
     lastsubstring pattern string =
         case BS.breakSubstring pattern string of
@@ -44,7 +48,7 @@ getHeaderBytes = mdebug "test" <$> lastsubstring "\xab\xcd\xefMaxMind.com"
 makeGeoDB :: FilePath -> IO GeoDB
 makeGeoDB geoFile = do
     bsmem <- unsafeMMapFile geoFile
-    let (DataMap hdr) = mdebug "hdr" $ decode (BL.fromChunks [getHeaderBytes bsmem])
+    let (DataMap hdr) = decode (BL.fromChunks [getHeaderBytes bsmem])
         mem = BL.fromChunks [bsmem]
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
@@ -54,10 +58,10 @@ makeGeoDB geoFile = do
 
 
 
-findGeoData :: GeoDB -> IP -> Maybe GeoField
-findGeoData geodb addr = do
+rawGeoData :: GeoDB -> IP -> Maybe GeoField
+rawGeoData geodb addr = do
   bits <- coerceAddr
-  offset <- mdebug "offset" <$> getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
+  offset <- getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
   let basedata = dataAt offset
   return $ resolvePointers basedata
   where
@@ -77,10 +81,33 @@ findGeoData geodb addr = do
             r2 = resolvePointers b
         in (r1, r2)
 
+data GeoResult = GeoResult {
+    geoContinent :: Maybe T.Text
+  , geoCountryISO :: Maybe T.Text
+  , geoCountry :: Maybe T.Text
+  , geoLocation :: Maybe (Double, Double)
+  , geoCity :: Maybe T.Text
+  , geoSubdivisions :: [(T.Text, T.Text)]
+} deriving (Show, Eq)
+
+findGeoData :: GeoDB -> T.Text -> IP -> Maybe GeoResult
+findGeoData geodb lang ip = do
+  (DataMap res) <- rawGeoData geodb ip
+  let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]
+      subdivs = mapMaybe (\s -> (,) <$> s .:? "iso_code" <*> s .:? "names" ..? lang) <$> subdivmap
+
+  return $ GeoResult (res .:? "continent" ..? "names" ..? lang)
+                     (res .:? "country" ..? "iso_code")
+                     (res .:? "country" ..? "names" ..? lang)
+                     ((,) <$> res .:? "location" ..? "latitude" <*> res .:? "location" ..? "longitude")
+                     (res .:? "city" ..? "names" ..? lang)
+                     (fromMaybe [] subdivs)
+
+
 main :: IO ()
 main = do
   geodb <- makeGeoDB "GeoLite2-City.mmdb"
   print (geoAddrType geodb)
 
-  let addr = IPv4 "212.58.246.91"
-  print $ findGeoData geodb addr
+  let addr = IPv4 "23.235.43.249"
+  print $ findGeoData geodb "de" addr

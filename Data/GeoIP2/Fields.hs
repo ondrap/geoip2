@@ -1,19 +1,20 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 module Data.GeoIP2.Fields where
 
-import Control.Applicative ((<$>))
-import Control.Monad (replicateM)
-import Data.Bits ((.&.), shift)
-import Data.Word
-import Data.Binary
-import Data.Binary.Get
-import qualified Data.Text as T
-import qualified Data.Map as Map
-import           Data.Text.Encoding    (decodeUtf8)
-import Data.Int
-import Data.Maybe (fromMaybe)
-
-import Debug.Trace
+import           Control.Applicative  ((<$>))
+import           Control.Monad        (replicateM)
+import           Data.Binary
+import           Data.Binary.Get
+import           Data.Bits            (shift, (.&.))
+import           Data.Int
+import qualified Data.Map             as Map
+import           Data.Maybe           (fromMaybe)
+import           Data.ReinterpretCast (wordToDouble)
+import qualified Data.Text            as T
+import           Data.Text.Encoding   (decodeUtf8)
+import           Data.Word ()
 
 data GeoField =
     DataPointer Int64
@@ -29,14 +30,27 @@ data GeoField =
 class GeoConvertable a where
   cvtGeo :: GeoField -> Maybe a
 
+(..?) :: GeoConvertable a => Maybe (Map.Map GeoField GeoField) -> T.Text -> Maybe a
+(Just geo) ..? name = Map.lookup (DataString name) geo >>= cvtGeo
+_ ..? _ = Nothing
+
 (.:?) :: GeoConvertable a => Map.Map GeoField GeoField -> T.Text -> Maybe a
 geo .:? name = Map.lookup (DataString name) geo >>= cvtGeo
 
 (.:) :: GeoConvertable a => Map.Map GeoField GeoField  -> T.Text -> a
 geo .: key = fromMaybe (error "Cannot find key.") (geo .:? key)
 
+instance GeoConvertable (Map.Map GeoField GeoField) where
+  cvtGeo (DataMap obj) = Just obj
+  cvtGeo _ = Nothing
+instance GeoConvertable [GeoField] where
+  cvtGeo (DataArray arr) = Just arr
+  cvtGeo _ = Nothing
 instance GeoConvertable T.Text where
   cvtGeo (DataString txt) = Just txt
+  cvtGeo _ = Nothing
+instance GeoConvertable Double where
+  cvtGeo (DataDouble d) = Just d
   cvtGeo _ = Nothing
 instance GeoConvertable Int where
   cvtGeo (DataInt i) = Just $ fromIntegral i
@@ -56,8 +70,6 @@ instance GeoConvertable a => GeoConvertable [a] where
 instance GeoConvertable Bool where
   cvtGeo (DataBool b) = Just b
   cvtGeo _ = Nothing
-
-mdebug str arg = trace (str ++ ": " ++ show arg) arg
 
 -- | Parse number of given length
 parseNumber :: Num a => Int64 -> Get a
@@ -90,9 +102,7 @@ instance Binary GeoField where
     case ftype of
         1 -> return $ DataPointer fsize
         2 -> DataString . decodeUtf8 <$> getByteString (fromIntegral fsize)
-        3 -> do
-            number <- mdebug "double" <$> get :: Get Double
-            return $ DataDouble number
+        3 -> DataDouble . wordToDouble <$> get
         5 -> DataWord <$> parseNumber fsize
         6 -> DataWord <$> parseNumber fsize
         7 -> do
