@@ -34,7 +34,7 @@ data GeoDB = GeoDB {
 }
 
 getHeaderBytes :: BS.ByteString -> BS.ByteString
-getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
+getHeaderBytes = mdebug "test" <$> lastsubstring "\xab\xcd\xefMaxMind.com"
   where
     lastsubstring pattern string =
         case BS.breakSubstring pattern string of
@@ -44,7 +44,7 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 makeGeoDB :: FilePath -> IO GeoDB
 makeGeoDB geoFile = do
     bsmem <- unsafeMMapFile geoFile
-    let (DataMap hdr) = decode (BL.fromChunks [getHeaderBytes bsmem])
+    let (DataMap hdr) = mdebug "hdr" $ decode (BL.fromChunks [getHeaderBytes bsmem])
         mem = BL.fromChunks [bsmem]
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
@@ -57,7 +57,7 @@ makeGeoDB geoFile = do
 findGeoData :: GeoDB -> IP -> Maybe GeoField
 findGeoData geodb addr = do
   bits <- coerceAddr
-  offset <- getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
+  offset <- mdebug "offset" <$> getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
   let basedata = dataAt offset
   return $ resolvePointers basedata
   where
@@ -79,7 +79,7 @@ findGeoData geodb addr = do
 
 main :: IO ()
 main = do
-  geodb <- makeGeoDB "GeoLite2-Country.mmdb"
+  geodb <- makeGeoDB "GeoLite2-City.mmdb"
   print (geoAddrType geodb)
 
   let addr = IPv4 "212.58.246.91"

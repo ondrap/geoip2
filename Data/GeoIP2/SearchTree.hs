@@ -1,12 +1,11 @@
 module Data.GeoIP2.SearchTree where
 
 import           Data.Binary
-import           Data.Bits            (shift, testBit, (.&.))
+import           Data.Bits            (shift, testBit, (.&.), (.|.))
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.IP              (IP (..), fromIPv4, fromIPv6b)
-
 
 -- | Convert byte to list of bits starting from the most significant one
 byteToBits :: Int -> [Bool]
@@ -24,10 +23,13 @@ readNode mem recordbits index =
     bytecount = fromIntegral $ recordbits `div` 4
     bytes = BL.take (fromIntegral bytecount) $ BL.drop (fromIntegral $ index * bytecount) mem
     numbers = concatMap BS.unpack (BL.toChunks bytes) :: [Word8]
-    makenum = foldl (\acc new -> (fromIntegral new) + 256 * acc) 0 :: [Word8] -> Int64
+    makenum = foldl (\acc new -> (fromIntegral new) + 256 * acc) 0 :: [Word8] -> Word64
     num = makenum numbers
-  in
-    (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
+    -- 28 bits has a strange record format
+    left28 = num `shift` (-32) .|. (num .&. 0xf0000000)
+  in case recordbits of
+      28 -> (fromIntegral left28, fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
+      _  -> (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
 
 -- | Get offset in the Data Section
 getDataOffset :: (BL.ByteString, Int64, Int) -> [Bool] -> Maybe Int64

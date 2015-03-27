@@ -90,6 +90,9 @@ instance Binary GeoField where
     case ftype of
         1 -> return $ DataPointer fsize
         2 -> DataString . decodeUtf8 <$> getByteString (fromIntegral fsize)
+        3 -> do
+            number <- mdebug "double" <$> get :: Get Double
+            return $ DataDouble number
         5 -> DataWord <$> parseNumber fsize
         6 -> DataWord <$> parseNumber fsize
         7 -> do
