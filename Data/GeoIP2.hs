@@ -15,6 +15,9 @@ import Data.Int
 import Data.Binary
 import qualified Data.Text as T
 import Data.IP (IP(..), ipv4ToIPv6)
+import Control.Applicative ((<$>))
+import Control.Monad (mapM)
+import qualified Data.Map as Map
 
 import Data.GeoIP2.Fields
 import Data.GeoIP2.SearchTree
@@ -49,18 +52,30 @@ makeGeoDB geoFile = do
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
 
+
+
 findGeoData :: GeoDB -> IP -> Maybe GeoField
 findGeoData geodb addr = do
   bits <- coerceAddr
   offset <- getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
-  return $ decode (BL.drop (offset + dataSectionStart) (geoMem geodb))
+  let basedata = dataAt offset
+  return $ resolvePointers basedata
   where
-    dataSectionStart = (fromIntegral $ geoRecordSize geodb `div` 4) * geoNodeCount geodb + 16
+    dataSectionStart = fromIntegral (geoRecordSize geodb `div` 4) * geoNodeCount geodb + 16
+    dataAt offset = decode (BL.drop (offset + dataSectionStart) (geoMem geodb))
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
       | otherwise = Nothing
+    resolvePointers (DataPointer ptr) = resolvePointers $ dataAt ptr
+    resolvePointers (DataMap obj) = DataMap $ Map.fromList $ map resolveTuple (Map.toList obj)
+    resolvePointers (DataArray arr) = DataArray $ map resolvePointers arr
+    resolvePointers x = x
+    resolveTuple (a,b) =
+        let r1 = resolvePointers a
+            r2 = resolvePointers b
+        in (r1, r2)
 
 main :: IO ()
 main = do

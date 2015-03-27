@@ -16,7 +16,7 @@ import Data.Maybe (fromMaybe)
 import Debug.Trace
 
 data GeoField =
-    DataPointer Int
+    DataPointer Int64
   | DataString T.Text
   | DataDouble Double
   | DataInt Int64
@@ -60,9 +60,9 @@ instance GeoConvertable Bool where
 mdebug str arg = trace (str ++ ": " ++ show arg) arg
 
 -- | Parse number of given length
-parseNumber :: Num a => Int -> Get a
+parseNumber :: Num a => Int64 -> Get a
 parseNumber fsize = do
-  bytes <- map fromIntegral <$> replicateM fsize getWord8
+  bytes <- map fromIntegral <$> replicateM (fromIntegral fsize) getWord8
   return $ foldl (\acc new -> new + 256 * acc) 0 bytes
 
 instance Binary GeoField where
@@ -71,15 +71,15 @@ instance Binary GeoField where
     control <- getWord8
     ftype <-  if | control .&. 0xe0 == 0 -> (+7) <$> getWord8
                  | otherwise -> return $ control `shift` (-5)
-    let _fsize = fromIntegral $ control .&. 0x1f :: Int
+    let _fsize = fromIntegral $ control .&. 0x1f :: Int64
     fsize <- if
             | ftype == 1 -> do
                   let _ss = _fsize `shift` (-3)
-                      _vval = _fsize .&. 0x7
+                      _vval = fromIntegral $ _fsize .&. 0x7
                   case _ss of
-                    0 -> ((fromIntegral $ _ss `shift` 8) +) <$> parseNumber 1
-                    1 -> ((2048 + fromIntegral (_ss `shift` 16)) +) <$> parseNumber 2
-                    2 -> ((526336 + fromIntegral (_ss `shift` 24)) +) <$> parseNumber 3
+                    0 -> ((_vval `shift` 8) +) <$> parseNumber 1
+                    1 -> ((2048 + (_vval `shift` 16)) +) <$> parseNumber 2
+                    2 -> ((526336 + (_vval `shift` 24)) +) <$> parseNumber 3
                     3 -> parseNumber 4
                     _ -> error "Cannot happen"
             | _fsize < 29  -> return _fsize
@@ -89,15 +89,15 @@ instance Binary GeoField where
 
     case ftype of
         1 -> return $ DataPointer fsize
-        2 -> DataString . decodeUtf8 <$> getByteString fsize
+        2 -> DataString . decodeUtf8 <$> getByteString (fromIntegral fsize)
         5 -> DataWord <$> parseNumber fsize
         6 -> DataWord <$> parseNumber fsize
         7 -> do
-            pairs <- replicateM fsize $ do
+            pairs <- replicateM (fromIntegral fsize) $ do
                     key <- get
                     val <- get
                     return (key, val)
             return $ DataMap (Map.fromList pairs)
         9 -> DataWord <$> parseNumber fsize
-        11 -> DataArray <$> replicateM fsize get
+        11 -> DataArray <$> replicateM (fromIntegral fsize) get
         _ -> error ("Cannot parse: Type: " ++ show ftype ++ ", Size: " ++ show fsize)
