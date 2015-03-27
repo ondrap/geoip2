@@ -81,6 +81,7 @@ instance Binary GeoField where
                     1 -> ((2048 + fromIntegral (_ss `shift` 16)) +) <$> parseNumber 2
                     2 -> ((526336 + fromIntegral (_ss `shift` 24)) +) <$> parseNumber 3
                     3 -> parseNumber 4
+                    _ -> error "Cannot happen"
             | _fsize < 29  -> return _fsize
             | _fsize == 29 -> (29+) <$> parseNumber 1
             | _fsize == 30 -> (285+) <$> parseNumber 2

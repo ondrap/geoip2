@@ -3,23 +3,21 @@
 {-# LANGUAGE MultiWayIf #-}
 
 module Data.GeoIP2 (
-  makeGeoDB
+    makeGeoDB
+  , findGeoData
 ) where
 
 import Control.Monad (when, unless)
 import System.IO.Posix.MMap
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
-import Data.Word
 import Data.Int
 import Data.Binary
 import qualified Data.Text as T
-import Data.Bits (testBit, shift, (.&.))
-import Data.IP
+import Data.IP (IP(..), ipv4ToIPv6)
 
 import Data.GeoIP2.Fields
-
-import Debug.Trace
+import Data.GeoIP2.SearchTree
 
 data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
@@ -31,38 +29,6 @@ data GeoDB = GeoDB {
  , geoRecordSize :: Int
  , geoAddrType :: GeoIP
 }
-
-byteToBits :: Int -> [Bool]
-byteToBits b = map (testBit b) [7,6..0]
-
-ipToBits :: IP -> [Bool]
-ipToBits (IPv4 addr) = concatMap byteToBits (fromIPv4 addr)
-ipToBits (IPv6 addr) = concatMap byteToBits (fromIPv6b addr)
-
-readNode :: BL.ByteString -> Int -> Int64 -> (Int64, Int64)
--- readNode _ _ index | trace ("Reading node: " ++ show index) False = undefined
-readNode mem recordbits index =
-  let
-    bytecount = fromIntegral $ recordbits `div` 4
-    bytes = BL.take (fromIntegral bytecount) $ BL.drop (fromIntegral $ index * bytecount) mem
-    numbers = concatMap BS.unpack (BL.toChunks bytes) :: [Word8]
-    makenum = foldl (\acc new -> (fromIntegral new) + 256 * acc) 0 :: [Word8] -> Int64
-    num = makenum numbers
-  in
-    (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
-
-getDataOffset :: GeoDB -> [Bool] -> Maybe Int64
-getDataOffset (GeoDB {geoMem=mem, geoNodeCount=nodeCount, geoRecordSize=recordSize}) startbits =
-  getnode startbits 0
-  where
-    getnode _ index
-      | index == nodeCount = Nothing
-      | index > nodeCount = Just $ index - nodeCount
-    getnode [] _ = Nothing
-    getnode (bit:rest) index = getnode rest nextOffset
-      where
-        (left, right) = readNode mem recordSize index
-        nextOffset = if bit then right else left
 
 getHeaderBytes :: BS.ByteString -> BS.ByteString
 getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
@@ -83,24 +49,23 @@ makeGeoDB geoFile = do
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
 
+findGeoData :: GeoDB -> IP -> Maybe GeoField
+findGeoData geodb addr = do
+  bits <- coerceAddr
+  offset <- getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
+  return $ decode (BL.drop (offset + dataSectionStart) (geoMem geodb))
+  where
+    dataSectionStart = (fromIntegral $ geoRecordSize geodb `div` 4) * geoNodeCount geodb + 16
+    coerceAddr
+      | (IPv4 _) <- addr, GeoIPv4 <- geoAddrType geodb = return $ ipToBits addr
+      | (IPv6 _) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits addr
+      | (IPv4 addrv4) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
+      | otherwise = Nothing
+
 main :: IO ()
 main = do
   geodb <- makeGeoDB "GeoLite2-Country.mmdb"
   print (geoAddrType geodb)
 
-  let addr = "212.58.246.91" :: IPv4
-      -- addr = "193.165.254.33" :: IPv4
-      -- addr = "192.168.2.3" :: IPv4
-      bits = ipToBits $ IPv6 (ipv4ToIPv6 addr)
-      moffset = getDataOffset geodb bits
-      dataSectionStart = (fromIntegral $ geoRecordSize geodb `div` 4) * geoNodeCount geodb + 16
-  print moffset
-  putStrLn "-------------"
-  case moffset of
-    Nothing -> putStrLn "Not found"
-    Just offset -> do
-        let item = decode (BL.drop (offset + dataSectionStart - 16) (geoMem geodb)) :: GeoField
-        print item
-
-
-  return ()
+  let addr = IPv4 "212.58.246.91"
+  print $ findGeoData geodb addr
