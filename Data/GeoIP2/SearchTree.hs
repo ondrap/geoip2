@@ -34,14 +34,14 @@ readNode mem recordbits index =
       _  -> (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
 
 -- | Get offset in the Data Section
-getDataOffset :: (BL.ByteString, Int64, Int) -> [Bool] -> Maybe Int64
+getDataOffset :: Monad m => (BL.ByteString, Int64, Int) -> [Bool] -> m Int64
 getDataOffset (mem, nodeCount, recordSize) startbits =
   getnode startbits 0
   where
     getnode _ index
-      | index == nodeCount = Nothing
-      | index > nodeCount = Just $ index - nodeCount - 16
-    getnode [] _ = Nothing
+      | index == nodeCount = fail "Information for address does not exist."
+      | index > nodeCount = return $ index - nodeCount - 16
+    getnode [] _ = fail "IP address too short????"
     getnode (bit:rest) index = getnode rest nextOffset
       where
         (left, right) = readNode mem recordSize index

@@ -75,7 +75,7 @@ openGeoDB geoFile = do
 
 
 
-rawGeoData :: GeoDB -> IP -> Maybe GeoField
+rawGeoData :: Monad m => GeoDB -> IP -> m GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
   offset <- getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
@@ -88,7 +88,7 @@ rawGeoData geodb addr = do
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
-      | otherwise = Nothing
+      | otherwise = fail "Cannot search IPv6 address in IPv4 database"
     resolvePointers (DataPointer ptr) = resolvePointers $ dataAt ptr
     resolvePointers (DataMap obj) = DataMap $ Map.fromList $ map resolveTuple (Map.toList obj)
     resolvePointers (DataArray arr) = DataArray $ map resolvePointers arr
@@ -109,12 +109,12 @@ data GeoResult = GeoResult {
   , geoSubdivisions :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
--- | Search GeoIP database
-findGeoData ::
+-- | Search GeoIP database, monadic version (e.g. use with Maybe or Either)
+findGeoData :: Monad m =>
      GeoDB   -- ^ Db handle
   -> T.Text  -- ^ Language code (e.g. "en")
   -> IP      -- ^ IP address to search
-  -> Maybe GeoResult -- ^ Result, if something is found
+  -> m GeoResult -- ^ Result, if something is found
 findGeoData geodb lang ip = do
   (DataMap res) <- rawGeoData geodb ip
   let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]

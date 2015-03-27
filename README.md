@@ -17,8 +17,8 @@ import Data.IP (IP(..))
 main = do
   geodb <- openGeoDB "GeoLite2-City.mmdb"
   let ip = IPv4 "23.253.242.70"
-  print $ findGeoData geodb "en" ip
+  print $ (findGeoData geodb "en" ip :: Maybe GeoResult)
 
   let ip2 = IPv6 "2001:4800:7817:104:be76:4eff:fe04:f608"
-  print $ findGeoData geodb "en" ip2
+  print $ (findGeoData geodb "en" ip2 :: Maybe GeoResult)
 ```
