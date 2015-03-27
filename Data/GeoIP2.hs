@@ -3,12 +3,23 @@
 {-# LANGUAGE MultiWayIf #-}
 
 module Data.GeoIP2 (
-    openGeoDB
+  -- * Library description
+  -- |
+  -- A haskell library for reading MaxMind's GeoIP version 2 files.
+  -- It supports both IPv4 and IPv6 addresses. When a match is found, it
+  -- is parsed and a simplified structure is returned. If you want to access
+  -- other fields than those that are exposed, it is internally possible.
+  --
+  -- The database is mmapped upon opening, all querying can be later
+  -- performed purely without IO monad.
+
+  -- * Opening the database
+    GeoDB
+  , openGeoDB
+  , geoDbLanguages, geoDbType, geoDbDescription, geoDbAddrType
+  -- * Querying the database
   , findGeoData
-  , GeoDB
-  , geoDbLanguages, geoDbType, geoDbDescription
-  , GeoResult
-  , geoContinent, geoCountryISO, geoCountry, geoCity, geoSubdivisions, geoLocation
+  , GeoResult(..)
 ) where
 
 import Control.Monad (when, unless)
@@ -26,16 +37,18 @@ import Data.Maybe (mapMaybe, fromMaybe)
 import Data.GeoIP2.Fields
 import Data.GeoIP2.SearchTree
 
+-- | Address type stored in database
 data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
+-- | Handle for search operations
 data GeoDB = GeoDB {
 	 geoMem :: BL.ByteString
- , geoDbType :: T.Text
- , geoDbLanguages :: [T.Text]
+ , geoDbType :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
+ , geoDbLanguages :: [T.Text]  -- ^ Languages supported in database
  , geoDbNodeCount :: Int64
  , geoDbRecordSize :: Int
- , geoDbAddrType :: GeoIP
- , geoDbDescription :: Maybe T.Text
+ , geoDbAddrType :: GeoIP -- ^ Type of address (IPv4/IPv6) stored in a database
+ , geoDbDescription :: Maybe T.Text -- ^ Description of a database in english
 }
 
 getHeaderBytes :: BS.ByteString -> BS.ByteString
@@ -46,6 +59,7 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
             (res, "") -> res
             (_, rest) -> lastsubstring pattern (BS.drop (BS.length pattern) rest)
 
+-- | Open database, mmap it into memory, parse header and return a handle for search operations
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
     bsmem <- unsafeMMapFile geoFile
@@ -53,7 +67,8 @@ openGeoDB geoFile = do
         mem = BL.fromChunks [bsmem]
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
-    return $ GeoDB mem (hdr .: "database_type") (hdr .: "languages")
+    return $ GeoDB mem (hdr .: "database_type")
+                       (fromMaybe [] $ hdr .:? "languages")
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
                        (hdr .:? "description" ..? "en")
@@ -83,8 +98,10 @@ rawGeoData geodb addr = do
             r2 = resolvePointers b
         in (r1, r2)
 
+-- | Result of a search query
 data GeoResult = GeoResult {
     geoContinent :: Maybe T.Text
+  , geoContinentCode :: Maybe T.Text
   , geoCountryISO :: Maybe T.Text
   , geoCountry :: Maybe T.Text
   , geoLocation :: Maybe (Double, Double)
@@ -92,13 +109,19 @@ data GeoResult = GeoResult {
   , geoSubdivisions :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
-findGeoData :: GeoDB -> T.Text -> IP -> Maybe GeoResult
+-- | Search GeoIP database
+findGeoData ::
+     GeoDB   -- ^ Db handle
+  -> T.Text  -- ^ Language code (e.g. "en")
+  -> IP      -- ^ IP address to search
+  -> Maybe GeoResult -- ^ Result, if something is found
 findGeoData geodb lang ip = do
   (DataMap res) <- rawGeoData geodb ip
   let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]
       subdivs = mapMaybe (\s -> (,) <$> s .:? "iso_code" <*> s .:? "names" ..? lang) <$> subdivmap
 
   return $ GeoResult (res .:? "continent" ..? "names" ..? lang)
+                     (res .:? "continent" ..? "code")
                      (res .:? "country" ..? "iso_code")
                      (res .:? "country" ..? "names" ..? lang)
                      ((,) <$> res .:? "location" ..? "latitude" <*> res .:? "location" ..? "longitude")

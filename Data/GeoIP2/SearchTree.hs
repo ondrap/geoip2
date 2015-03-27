@@ -1,3 +1,5 @@
+{-# OPTIONS_HADDOCK hide #-}
+
 module Data.GeoIP2.SearchTree where
 
 import           Data.Binary
