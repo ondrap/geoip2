@@ -13,6 +13,8 @@ import           Data.Text.Encoding    (decodeUtf8)
 import Data.Int
 import Data.Maybe (fromMaybe)
 
+import Debug.Trace
+
 data GeoField =
     DataPointer Int
   | DataString T.Text
@@ -27,16 +29,20 @@ data GeoField =
 class GeoConvertable a where
   cvtGeo :: GeoField -> Maybe a
 
-(.:?) :: GeoConvertable a => (Map.Map GeoField GeoField) -> T.Text -> Maybe a
+(.:?) :: GeoConvertable a => Map.Map GeoField GeoField -> T.Text -> Maybe a
 geo .:? name = Map.lookup (DataString name) geo >>= cvtGeo
 
-(.:) :: GeoConvertable a => (Map.Map GeoField GeoField)  -> T.Text -> a
+(.:) :: GeoConvertable a => Map.Map GeoField GeoField  -> T.Text -> a
 geo .: key = fromMaybe (error "Cannot find key.") (geo .:? key)
 
 instance GeoConvertable T.Text where
   cvtGeo (DataString txt) = Just txt
   cvtGeo _ = Nothing
 instance GeoConvertable Int where
+  cvtGeo (DataInt i) = Just $ fromIntegral i
+  cvtGeo (DataWord w) = Just $ fromIntegral w
+  cvtGeo _ = Nothing
+instance GeoConvertable Int64 where
   cvtGeo (DataInt i) = Just $ fromIntegral i
   cvtGeo (DataWord w) = Just $ fromIntegral w
   cvtGeo _ = Nothing
@@ -51,6 +57,7 @@ instance GeoConvertable Bool where
   cvtGeo (DataBool b) = Just b
   cvtGeo _ = Nothing
 
+mdebug str arg = trace (str ++ ": " ++ show arg) arg
 
 -- | Parse number of given length
 parseNumber :: Num a => Int -> Get a
@@ -62,10 +69,25 @@ instance Binary GeoField where
   put = undefined
   get = do
     control <- getWord8
-    let fsize = fromIntegral $ control .&. 0x1f :: Int
-    ftype <- if | control .&. 0xe0 == 0 -> (+7) <$> getWord8
-                | otherwise -> return $ control `shift` (-5)
+    ftype <-  if | control .&. 0xe0 == 0 -> (+7) <$> getWord8
+                 | otherwise -> return $ control `shift` (-5)
+    let _fsize = fromIntegral $ control .&. 0x1f :: Int
+    fsize <- if
+            | ftype == 1 -> do
+                  let _ss = _fsize `shift` (-3)
+                      _vval = _fsize .&. 0x7
+                  case _ss of
+                    0 -> ((fromIntegral $ _ss `shift` 8) +) <$> parseNumber 1
+                    1 -> ((2048 + fromIntegral (_ss `shift` 16)) +) <$> parseNumber 2
+                    2 -> ((526336 + fromIntegral (_ss `shift` 24)) +) <$> parseNumber 3
+                    3 -> parseNumber 4
+            | _fsize < 29  -> return _fsize
+            | _fsize == 29 -> (29+) <$> parseNumber 1
+            | _fsize == 30 -> (285+) <$> parseNumber 2
+            | _fsize == 31 ->  (65821+) <$> parseNumber 3
+
     case ftype of
+        1 -> return $ DataPointer fsize
         2 -> DataString . decodeUtf8 <$> getByteString fsize
         5 -> DataWord <$> parseNumber fsize
         6 -> DataWord <$> parseNumber fsize
