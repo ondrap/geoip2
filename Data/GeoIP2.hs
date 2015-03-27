@@ -3,10 +3,10 @@
 {-# LANGUAGE MultiWayIf #-}
 
 module Data.GeoIP2 (
-    makeGeoDB
+    openGeoDB
   , findGeoData
   , GeoDB
-  , geoLanguages
+  , geoDbLanguages, geoDbType, geoDbDescription
   , GeoResult
   , geoContinent, geoCountryISO, geoCountry, geoCity, geoSubdivisions, geoLocation
 ) where
@@ -30,11 +30,12 @@ data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
 data GeoDB = GeoDB {
 	 geoMem :: BL.ByteString
- , geoDatabaseType :: T.Text
- , geoLanguages :: [T.Text]
- , geoNodeCount :: Int64
- , geoRecordSize :: Int
- , geoAddrType :: GeoIP
+ , geoDbType :: T.Text
+ , geoDbLanguages :: [T.Text]
+ , geoDbNodeCount :: Int64
+ , geoDbRecordSize :: Int
+ , geoDbAddrType :: GeoIP
+ , geoDbDescription :: Maybe T.Text
 }
 
 getHeaderBytes :: BS.ByteString -> BS.ByteString
@@ -45,8 +46,8 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
             (res, "") -> res
             (_, rest) -> lastsubstring pattern (BS.drop (BS.length pattern) rest)
 
-makeGeoDB :: FilePath -> IO GeoDB
-makeGeoDB geoFile = do
+openGeoDB :: FilePath -> IO GeoDB
+openGeoDB geoFile = do
     bsmem <- unsafeMMapFile geoFile
     let (DataMap hdr) = decode (BL.fromChunks [getHeaderBytes bsmem])
         mem = BL.fromChunks [bsmem]
@@ -55,22 +56,23 @@ makeGeoDB geoFile = do
     return $ GeoDB mem (hdr .: "database_type") (hdr .: "languages")
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
+                       (hdr .:? "description" ..? "en")
 
 
 
 rawGeoData :: GeoDB -> IP -> Maybe GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
-  offset <- getDataOffset (geoMem geodb, geoNodeCount geodb, geoRecordSize geodb) bits
+  offset <- getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
   let basedata = dataAt offset
   return $ resolvePointers basedata
   where
-    dataSectionStart = fromIntegral (geoRecordSize geodb `div` 4) * geoNodeCount geodb + 16
+    dataSectionStart = fromIntegral (geoDbRecordSize geodb `div` 4) * geoDbNodeCount geodb + 16
     dataAt offset = decode (BL.drop (offset + dataSectionStart) (geoMem geodb))
     coerceAddr
-      | (IPv4 _) <- addr, GeoIPv4 <- geoAddrType geodb = return $ ipToBits addr
-      | (IPv6 _) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits addr
-      | (IPv4 addrv4) <- addr, GeoIPv6 <- geoAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
+      | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
+      | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
+      | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
       | otherwise = Nothing
     resolvePointers (DataPointer ptr) = resolvePointers $ dataAt ptr
     resolvePointers (DataMap obj) = DataMap $ Map.fromList $ map resolveTuple (Map.toList obj)
@@ -102,12 +104,3 @@ findGeoData geodb lang ip = do
                      ((,) <$> res .:? "location" ..? "latitude" <*> res .:? "location" ..? "longitude")
                      (res .:? "city" ..? "names" ..? lang)
                      (fromMaybe [] subdivs)
-
-
-main :: IO ()
-main = do
-  geodb <- makeGeoDB "GeoLite2-City.mmdb"
-  print (geoAddrType geodb)
-
-  let addr = IPv4 "23.235.43.249"
-  print $ findGeoData geodb "de" addr

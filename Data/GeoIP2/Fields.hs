@@ -4,7 +4,7 @@
 module Data.GeoIP2.Fields where
 
 import           Control.Applicative  ((<$>))
-import           Control.Monad        (replicateM)
+import           Control.Monad        (replicateM, replicateM_)
 import           Data.Binary
 import           Data.Binary.Get
 import           Data.Bits            (shift, (.&.))
@@ -25,6 +25,7 @@ data GeoField =
   | DataMap (Map.Map GeoField GeoField)
   | DataArray [GeoField]
   | DataBool Bool
+  | DataUnknown Word8 Int64
   deriving (Eq, Ord, Show)
 
 class GeoConvertable a where
@@ -111,6 +112,10 @@ instance Binary GeoField where
                     val <- get
                     return (key, val)
             return $ DataMap (Map.fromList pairs)
+        8 -> DataWord <$> parseNumber fsize
         9 -> DataWord <$> parseNumber fsize
         11 -> DataArray <$> replicateM (fromIntegral fsize) get
-        _ -> error ("Cannot parse: Type: " ++ show ftype ++ ", Size: " ++ show fsize)
+        14 -> return $ DataBool (fsize == 0)
+        _ -> do
+          replicateM_ (fromIntegral fsize) getWord8
+          return $ DataUnknown ftype fsize

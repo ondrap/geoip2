@@ -23,7 +23,7 @@ readNode mem recordbits index =
     bytecount = fromIntegral $ recordbits `div` 4
     bytes = BL.take (fromIntegral bytecount) $ BL.drop (fromIntegral $ index * bytecount) mem
     numbers = concatMap BS.unpack (BL.toChunks bytes) :: [Word8]
-    makenum = foldl (\acc new -> (fromIntegral new) + 256 * acc) 0 :: [Word8] -> Word64
+    makenum = foldl (\acc new -> fromIntegral new + 256 * acc) 0 :: [Word8] -> Word64
     num = makenum numbers
     -- 28 bits has a strange record format
     left28 = num `shift` (-32) .|. (num .&. 0xf0000000)
