@@ -24,6 +24,6 @@ library
   other-modules:       Data.GeoIP2.Fields, Data.GeoIP2.SearchTree
   build-depends:       base >=4.7 && <4.8,
                        bytestring-mmap, bytestring, binary, text, containers,
-                       iproute, reinterpret-cast
+                       iproute(>=1.4.0), reinterpret-cast
   default-language:    Haskell2010
   ghc-options:         -Wall
