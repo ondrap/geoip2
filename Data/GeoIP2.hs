@@ -16,7 +16,8 @@ module Data.GeoIP2 (
   -- * Opening the database
     GeoDB
   , openGeoDB
-  , geoDbLanguages, geoDbType, geoDbDescription, geoDbAddrType
+  , geoDbLanguages, geoDbType, geoDbDescription
+  , geoDbAddrType, GeoIP(..)
   -- * Querying the database
   , findGeoData
   , GeoResult(..)
