@@ -14,7 +14,7 @@ maintainer:          palkovsky.ondrej@gmail.com
 category:            Database
 build-type:          Simple
 cabal-version:       >=1.10
-extra-source-files:  ChangeLog.md
+extra-source-files:  README.md ChangeLog.md
 
 source-repository head
   type: git
