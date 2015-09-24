@@ -43,7 +43,7 @@ data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
 -- | Handle for search operations
 data GeoDB = GeoDB {
-	 geoMem :: BL.ByteString
+   geoMem :: BL.ByteString
  , geoDbType :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
  , geoDbLanguages :: [T.Text]  -- ^ Languages supported in database
  , geoDbNodeCount :: Int64
