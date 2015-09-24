@@ -1,5 +1,5 @@
 name:                geoip2
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Pure haskell interface to MaxMind GeoIP database
 description:
   GeoIP2 is a haskell binding to the MaxMind GeoIP2 database.
@@ -14,6 +14,7 @@ maintainer:          palkovsky.ondrej@gmail.com
 category:            Database
 build-type:          Simple
 cabal-version:       >=1.10
+extra-source-files:  README.md ChangeLog.md
 
 source-repository head
   type: git
@@ -22,8 +23,13 @@ source-repository head
 library
   exposed-modules:     Data.GeoIP2
   other-modules:       Data.GeoIP2.Fields, Data.GeoIP2.SearchTree
-  build-depends:       base >=4.7 && <4.8,
-                       bytestring-mmap, bytestring, binary, text, containers,
-                       iproute(>=1.4.0), reinterpret-cast
+  build-depends:       base
+                     , bytestring-mmap
+                     , bytestring
+                     , binary
+                     , text
+                     , containers
+                     , iproute(>=1.4.0)
+                     , reinterpret-cast
   default-language:    Haskell2010
   ghc-options:         -Wall
