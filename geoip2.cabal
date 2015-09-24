@@ -23,7 +23,7 @@ source-repository head
 library
   exposed-modules:     Data.GeoIP2
   other-modules:       Data.GeoIP2.Fields, Data.GeoIP2.SearchTree
-  build-depends:       base
+  build-depends:       base >=4.7 && <4.9
                      , bytestring-mmap
                      , bytestring
                      , binary
