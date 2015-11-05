@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiWayIf        #-}
 
 module Data.GeoIP2.Fields where
 
@@ -9,14 +9,14 @@ import           Control.Monad        (replicateM)
 import           Data.Binary
 import           Data.Binary.Get
 import           Data.Bits            (shift, (.&.))
+import qualified Data.ByteString      as BS
 import           Data.Int
 import qualified Data.Map             as Map
 import           Data.Maybe           (fromMaybe)
 import           Data.ReinterpretCast (wordToDouble)
 import qualified Data.Text            as T
 import           Data.Text.Encoding   (decodeUtf8)
-import           Data.Word ()
-import qualified Data.ByteString as BS
+import           Data.Word            ()
 
 data GeoField =
     DataPointer Int64

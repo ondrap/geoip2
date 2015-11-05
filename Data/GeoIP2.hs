@@ -1,6 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiWayIf #-}
 
 module Data.GeoIP2 (
   -- * Library description
@@ -23,32 +23,35 @@ module Data.GeoIP2 (
   , GeoResult(..)
 ) where
 
-import Control.Monad (when, unless)
-import System.IO.MMap
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import Data.Int
-import Data.Binary
-import qualified Data.Text as T
-import Data.IP (IP(..), ipv4ToIPv6)
-import Control.Applicative ((<$>), (<*>))
-import qualified Data.Map as Map
-import Data.Maybe (mapMaybe, fromMaybe)
+import           Control.Applicative    ((<$>), (<*>))
+import           Control.Monad          (unless, when)
+import           Data.Binary
+import qualified Data.ByteString        as BS
+import qualified Data.ByteString.Lazy   as BL
+import qualified Data.Cache.LRU.IO      as LRU
+import           Data.Int
+import           Data.IP                (IP (..), ipv4ToIPv6)
+import qualified Data.Map               as Map
+import           Data.Maybe             (fromMaybe, mapMaybe)
+import qualified Data.Text              as T
+import           System.IO.MMap
+import           System.IO.Unsafe       (unsafePerformIO)
 
-import Data.GeoIP2.Fields
-import Data.GeoIP2.SearchTree
+import           Data.GeoIP2.Fields
+import           Data.GeoIP2.SearchTree
 
 -- | Address type stored in database
 data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
 -- | Handle for search operations
 data GeoDB = GeoDB {
-   geoMem :: BS.ByteString
- , geoDbType :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
- , geoDbLanguages :: [T.Text]  -- ^ Languages supported in database
- , geoDbNodeCount :: Int64
- , geoDbRecordSize :: Int
- , geoDbAddrType :: GeoIP -- ^ Type of address (IPv4/IPv6) stored in a database
+   geoMem           :: BS.ByteString
+ , geoLru           :: LRU.AtomicLRU Int GeoField
+ , geoDbType        :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
+ , geoDbLanguages   :: [T.Text]  -- ^ Languages supported in database
+ , geoDbNodeCount   :: Int64
+ , geoDbRecordSize  :: Int
+ , geoDbAddrType    :: GeoIP -- ^ Type of address (IPv4/IPv6) stored in a database
  , geoDbDescription :: Maybe T.Text -- ^ Description of a database in english
 }
 
@@ -67,7 +70,8 @@ openGeoDB geoFile = do
     let (DataMap hdr) = decode (BL.fromStrict $ getHeaderBytes bsmem)
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
-    return $ GeoDB bsmem (hdr .: "database_type")
+    lru <- LRU.newAtomicLRU (Just 10000)
+    return $ GeoDB bsmem lru (hdr .: "database_type")
                        (fromMaybe [] $ hdr .:? "languages")
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
@@ -78,18 +82,29 @@ openGeoDB geoFile = do
 rawGeoData :: Monad m => GeoDB -> IP -> m GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
-  offset <- getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
+  offset <- fromIntegral <$> getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
   let basedata = dataAt offset
   return $ resolvePointers basedata
   where
-    dataSectionStart = fromIntegral (geoDbRecordSize geodb `div` 4) * geoDbNodeCount geodb + 16
-    dataAt offset = decode (BL.fromStrict $ BS.drop (fromIntegral offset + fromIntegral dataSectionStart) (geoMem geodb))
+    dataSectionStart = (geoDbRecordSize geodb `div` 4) * fromIntegral (geoDbNodeCount geodb) + 16
+    -- Add caching
+    dataAt offset = unsafePerformIO $ do
+        cached <- LRU.lookup offset (geoLru geodb)
+        case cached of
+          Just result -> return result
+          Nothing -> do
+            let decres = decodeOrFail (BL.fromStrict $ BS.drop (offset + dataSectionStart) (geoMem geodb))
+            case decres of
+              Left (_,_,err) -> fail err
+              Right (_,_,result) -> do
+                LRU.insert offset result (geoLru geodb)
+                return result
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
       | otherwise = fail "Cannot search IPv6 address in IPv4 database"
-    resolvePointers (DataPointer ptr) = resolvePointers $ dataAt ptr
+    resolvePointers (DataPointer ptr) = resolvePointers $ dataAt (fromIntegral ptr)
     resolvePointers (DataMap obj) = DataMap $ Map.fromList $ map resolveTuple (Map.toList obj)
     resolvePointers (DataArray arr) = DataArray $ map resolvePointers arr
     resolvePointers x = x
@@ -100,13 +115,13 @@ rawGeoData geodb addr = do
 
 -- | Result of a search query
 data GeoResult = GeoResult {
-    geoContinent :: Maybe T.Text
+    geoContinent     :: Maybe T.Text
   , geoContinentCode :: Maybe T.Text
-  , geoCountryISO :: Maybe T.Text
-  , geoCountry :: Maybe T.Text
-  , geoLocation :: Maybe (Double, Double)
-  , geoCity :: Maybe T.Text
-  , geoSubdivisions :: [(T.Text, T.Text)]
+  , geoCountryISO    :: Maybe T.Text
+  , geoCountry       :: Maybe T.Text
+  , geoLocation      :: Maybe (Double, Double)
+  , geoCity          :: Maybe T.Text
+  , geoSubdivisions  :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
 -- | Search GeoIP database, monadic version (e.g. use with Maybe or Either)

@@ -5,7 +5,6 @@ module Data.GeoIP2.SearchTree where
 import           Data.Binary
 import           Data.Bits            (shift, testBit, (.&.), (.|.))
 import qualified Data.ByteString      as BS
-import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.IP              (IP (..), fromIPv4, fromIPv6b)
 

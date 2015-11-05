@@ -31,5 +31,6 @@ library
                      , containers
                      , iproute(>=1.4.0)
                      , reinterpret-cast
+                     , lrucache
   default-language:    Haskell2010
   ghc-options:         -Wall
