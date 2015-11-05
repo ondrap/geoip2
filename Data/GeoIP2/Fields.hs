@@ -6,8 +6,7 @@ module Data.GeoIP2.Fields where
 
 import           Control.Applicative  ((<$>))
 import           Control.Monad        (replicateM)
-import           Data.Binary
-import           Data.Binary.Get
+import           Data.Serialize
 import           Data.Bits            (shift, (.&.))
 import qualified Data.ByteString      as BS
 import           Data.Int
@@ -16,11 +15,11 @@ import           Data.Maybe           (fromMaybe)
 import           Data.ReinterpretCast (wordToDouble)
 import qualified Data.Text            as T
 import           Data.Text.Encoding   (decodeUtf8)
-import           Data.Word            ()
+import           Data.Word
 
 data GeoField =
     DataPointer Int64
-  | DataString T.Text
+  | DataString !T.Text
   | DataDouble Double
   | DataInt Int64
   | DataWord Word64
@@ -77,10 +76,10 @@ instance GeoConvertable Bool where
 -- | Parse number of given length
 parseNumber :: Num a => Int64 -> Get a
 parseNumber fsize = do
-  bytes <- getByteString (fromIntegral fsize)
+  bytes <- getBytes (fromIntegral fsize)
   return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
-instance Binary GeoField where
+instance Serialize GeoField where
   put = undefined
   get = do
     control <- getWord8
@@ -104,7 +103,7 @@ instance Binary GeoField where
 
     case ftype of
         1 -> return $ DataPointer fsize
-        2 -> DataString . decodeUtf8 <$> getByteString (fromIntegral fsize)
+        2 -> DataString . decodeUtf8 <$> getBytes (fromIntegral fsize)
         3 -> DataDouble . wordToDouble <$> get
         5 -> DataWord <$> parseNumber fsize
         6 -> DataWord <$> parseNumber fsize
@@ -119,5 +118,5 @@ instance Binary GeoField where
         11 -> DataArray <$> replicateM (fromIntegral fsize) get
         14 -> return $ DataBool (fsize == 0)
         _ -> do
-          _ <- getByteString (fromIntegral fsize)
+          _ <- getBytes (fromIntegral fsize)
           return $ DataUnknown ftype fsize

@@ -26,11 +26,10 @@ library
   build-depends:       base >=4.7 && <4.9
                      , mmap
                      , bytestring
-                     , binary
+                     , cereal
                      , text
                      , containers
                      , iproute(>=1.4.0)
                      , reinterpret-cast
-                     , lrucache
   default-language:    Haskell2010
   ghc-options:         -Wall

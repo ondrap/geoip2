@@ -2,11 +2,11 @@
 
 module Data.GeoIP2.SearchTree where
 
-import           Data.Binary
-import           Data.Bits            (shift, testBit, (.&.), (.|.))
-import qualified Data.ByteString      as BS
+import           Data.Bits       (shift, testBit, (.&.), (.|.))
+import qualified Data.ByteString as BS
 import           Data.Int
-import           Data.IP              (IP (..), fromIPv4, fromIPv6b)
+import           Data.IP         (IP (..), fromIPv4, fromIPv6b)
+import           Data.Word
 
 -- | Convert byte to list of bits starting from the most significant one
 byteToBits :: Int -> [Bool]

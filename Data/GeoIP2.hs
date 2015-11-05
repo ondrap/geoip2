@@ -25,17 +25,14 @@ module Data.GeoIP2 (
 
 import           Control.Applicative    ((<$>), (<*>))
 import           Control.Monad          (unless, when)
-import           Data.Binary
+import           Data.Serialize
 import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Lazy   as BL
-import qualified Data.Cache.LRU.IO      as LRU
 import           Data.Int
 import           Data.IP                (IP (..), ipv4ToIPv6)
 import qualified Data.Map               as Map
 import           Data.Maybe             (fromMaybe, mapMaybe)
 import qualified Data.Text              as T
 import           System.IO.MMap
-import           System.IO.Unsafe       (unsafePerformIO)
 
 import           Data.GeoIP2.Fields
 import           Data.GeoIP2.SearchTree
@@ -46,7 +43,6 @@ data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 -- | Handle for search operations
 data GeoDB = GeoDB {
    geoMem           :: BS.ByteString
- , geoLru           :: LRU.AtomicLRU Int GeoField
  , geoDbType        :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
  , geoDbLanguages   :: [T.Text]  -- ^ Languages supported in database
  , geoDbNodeCount   :: Int64
@@ -67,11 +63,10 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
     bsmem <- mmapFileByteString geoFile Nothing
-    let (DataMap hdr) = decode (BL.fromStrict $ getHeaderBytes bsmem)
+    let (Right (DataMap hdr)) = decode (getHeaderBytes bsmem)
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
-    lru <- LRU.newAtomicLRU (Just 10000)
-    return $ GeoDB bsmem lru (hdr .: "database_type")
+    return $ GeoDB bsmem (hdr .: "database_type")
                        (fromMaybe [] $ hdr .:? "languages")
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
@@ -88,20 +83,9 @@ rawGeoData geodb addr = do
   where
     dataSectionStart = (geoDbRecordSize geodb `div` 4) * fromIntegral (geoDbNodeCount geodb) + 16
     -- Add caching
-    dataAt offset = case lruget offset of
-                      Right res -> return res
-                      Left err -> fail err
-    lruget offset = unsafePerformIO $ do
-        cached <- LRU.lookup offset (geoLru geodb)
-        case cached of
-          Just result -> return (Right result)
-          Nothing -> do
-            let decres = decodeOrFail (BL.fromStrict $ BS.drop (offset + dataSectionStart) (geoMem geodb))
-            case decres of
-              Left (_,_,err) -> return (Left err)
-              Right (_,_,result) -> do
-                LRU.insert offset result (geoLru geodb)
-                return (Right result)
+    dataAt offset =  case decode (BS.drop (offset + dataSectionStart) (geoMem geodb)) of
+                          Right res -> return res
+                          Left err -> fail err
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
