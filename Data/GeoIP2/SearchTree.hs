@@ -19,14 +19,12 @@ ipToBits (IPv4 addr) = concatMap byteToBits (fromIPv4 addr)
 ipToBits (IPv6 addr) = concatMap byteToBits (fromIPv6b addr)
 
 -- | Read node (2 records) given the index of a node
-readNode :: BL.ByteString -> Int -> Int64 -> (Int64, Int64)
+readNode :: BS.ByteString -> Int -> Int64 -> (Int64, Int64)
 readNode mem recordbits index =
   let
     bytecount = fromIntegral $ recordbits `div` 4
-    bytes = BL.take (fromIntegral bytecount) $ BL.drop (fromIntegral $ index * bytecount) mem
-    numbers = concatMap BS.unpack (BL.toChunks bytes) :: [Word8]
-    makenum = foldl (\acc new -> fromIntegral new + 256 * acc) 0 :: [Word8] -> Word64
-    num = makenum numbers
+    bytes = BS.take (fromIntegral bytecount) $ BS.drop (fromIntegral $ index * bytecount) mem
+    num = BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes :: Word64
     -- 28 bits has a strange record format
     left28 = num `shift` (-32) .|. (num .&. 0xf0000000)
   in case recordbits of
@@ -34,7 +32,7 @@ readNode mem recordbits index =
       _  -> (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
 
 -- | Get offset in the Data Section
-getDataOffset :: Monad m => (BL.ByteString, Int64, Int) -> [Bool] -> m Int64
+getDataOffset :: Monad m => (BS.ByteString, Int64, Int) -> [Bool] -> m Int64
 getDataOffset (mem, nodeCount, recordSize) startbits =
   getnode startbits 0
   where

@@ -24,7 +24,7 @@ library
   exposed-modules:     Data.GeoIP2
   other-modules:       Data.GeoIP2.Fields, Data.GeoIP2.SearchTree
   build-depends:       base >=4.7 && <4.9
-                     , bytestring-mmap
+                     , mmap
                      , bytestring
                      , binary
                      , text

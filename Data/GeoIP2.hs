@@ -24,7 +24,7 @@ module Data.GeoIP2 (
 ) where
 
 import Control.Monad (when, unless)
-import System.IO.Posix.MMap
+import System.IO.MMap
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Int
@@ -43,7 +43,7 @@ data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
 
 -- | Handle for search operations
 data GeoDB = GeoDB {
-   geoMem :: BL.ByteString
+   geoMem :: BS.ByteString
  , geoDbType :: T.Text         -- ^ String that indicates the structure of each data record associated with an IP address
  , geoDbLanguages :: [T.Text]  -- ^ Languages supported in database
  , geoDbNodeCount :: Int64
@@ -63,12 +63,11 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 -- | Open database, mmap it into memory, parse header and return a handle for search operations
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
-    bsmem <- unsafeMMapFile geoFile
-    let (DataMap hdr) = decode (BL.fromChunks [getHeaderBytes bsmem])
-        mem = BL.fromChunks [bsmem]
+    bsmem <- mmapFileByteString geoFile Nothing
+    let (DataMap hdr) = decode (BL.fromStrict $ getHeaderBytes bsmem)
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
-    return $ GeoDB mem (hdr .: "database_type")
+    return $ GeoDB bsmem (hdr .: "database_type")
                        (fromMaybe [] $ hdr .:? "languages")
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
@@ -84,7 +83,7 @@ rawGeoData geodb addr = do
   return $ resolvePointers basedata
   where
     dataSectionStart = fromIntegral (geoDbRecordSize geodb `div` 4) * geoDbNodeCount geodb + 16
-    dataAt offset = decode (BL.drop (offset + dataSectionStart) (geoMem geodb))
+    dataAt offset = decode (BL.fromStrict $ BS.drop (fromIntegral offset + fromIntegral dataSectionStart) (geoMem geodb))
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr

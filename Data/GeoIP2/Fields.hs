@@ -5,7 +5,7 @@
 module Data.GeoIP2.Fields where
 
 import           Control.Applicative  ((<$>))
-import           Control.Monad        (replicateM, replicateM_)
+import           Control.Monad        (replicateM)
 import           Data.Binary
 import           Data.Binary.Get
 import           Data.Bits            (shift, (.&.))
@@ -16,6 +16,7 @@ import           Data.ReinterpretCast (wordToDouble)
 import qualified Data.Text            as T
 import           Data.Text.Encoding   (decodeUtf8)
 import           Data.Word ()
+import qualified Data.ByteString as BS
 
 data GeoField =
     DataPointer Int64
@@ -76,8 +77,8 @@ instance GeoConvertable Bool where
 -- | Parse number of given length
 parseNumber :: Num a => Int64 -> Get a
 parseNumber fsize = do
-  bytes <- map fromIntegral <$> replicateM (fromIntegral fsize) getWord8
-  return $ foldl (\acc new -> new + 256 * acc) 0 bytes
+  bytes <- getByteString (fromIntegral fsize)
+  return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
 instance Binary GeoField where
   put = undefined
@@ -118,5 +119,5 @@ instance Binary GeoField where
         11 -> DataArray <$> replicateM (fromIntegral fsize) get
         14 -> return $ DataBool (fsize == 0)
         _ -> do
-          replicateM_ (fromIntegral fsize) getWord8
+          _ <- getByteString (fromIntegral fsize)
           return $ DataUnknown ftype fsize
