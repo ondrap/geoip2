@@ -83,35 +83,35 @@ rawGeoData :: Monad m => GeoDB -> IP -> m GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
   offset <- fromIntegral <$> getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
-  let basedata = dataAt offset
-  return $ resolvePointers basedata
+  basedata <- dataAt offset
+  resolvePointers basedata
   where
     dataSectionStart = (geoDbRecordSize geodb `div` 4) * fromIntegral (geoDbNodeCount geodb) + 16
     -- Add caching
-    dataAt offset = unsafePerformIO $ do
+    dataAt offset = case lruget offset of
+                      Right res -> return res
+                      Left err -> fail err
+    lruget offset = unsafePerformIO $ do
         cached <- LRU.lookup offset (geoLru geodb)
         case cached of
-          Just result -> return result
+          Just result -> return (Right result)
           Nothing -> do
             let decres = decodeOrFail (BL.fromStrict $ BS.drop (offset + dataSectionStart) (geoMem geodb))
             case decres of
-              Left (_,_,err) -> fail err
+              Left (_,_,err) -> return (Left err)
               Right (_,_,result) -> do
                 LRU.insert offset result (geoLru geodb)
-                return result
+                return (Right result)
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
       | otherwise = fail "Cannot search IPv6 address in IPv4 database"
-    resolvePointers (DataPointer ptr) = resolvePointers $ dataAt (fromIntegral ptr)
-    resolvePointers (DataMap obj) = DataMap $ Map.fromList $ map resolveTuple (Map.toList obj)
-    resolvePointers (DataArray arr) = DataArray $ map resolvePointers arr
-    resolvePointers x = x
-    resolveTuple (a,b) =
-        let r1 = resolvePointers a
-            r2 = resolvePointers b
-        in (r1, r2)
+    resolvePointers (DataPointer ptr) = dataAt (fromIntegral ptr) >>= resolvePointers -- TODO - limit recursion?
+    resolvePointers (DataMap obj) = DataMap . Map.fromList <$> mapM resolveTuple (Map.toList obj)
+    resolvePointers (DataArray arr) = DataArray <$> mapM resolvePointers arr
+    resolvePointers x = return x
+    resolveTuple (a,b) = (,) <$> resolvePointers a <*> resolvePointers b
 
 -- | Result of a search query
 data GeoResult = GeoResult {
