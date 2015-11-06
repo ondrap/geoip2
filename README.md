@@ -3,7 +3,7 @@ GeoIP2 - library for accessing GeoIP2 database
 
 GeoIP2 is a haskell binding to the MaxMind GeoIP2 database.
 It parses the database according to the MaxMind DB
-<a href="http://maxmind.github.io/MaxMind-DB/">specification</a>,
+[specificaiton](http://maxmind.github.io/MaxMind-DB),
 version 2 of the specification is supported. The free geolite2 database can
 be downloaded at http://dev.maxmind.com/geoip/geoip2/geolite2/.
 

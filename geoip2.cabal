@@ -1,5 +1,5 @@
 name:                geoip2
-version:             0.1.0.3
+version:             0.1.0.4
 synopsis:            Pure haskell interface to MaxMind GeoIP database
 description:
   GeoIP2 is a haskell binding to the MaxMind GeoIP2 database.
