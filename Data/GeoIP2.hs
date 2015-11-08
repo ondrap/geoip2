@@ -63,7 +63,7 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
     bsmem <- mmapFileByteString geoFile Nothing
-    let (Right (DataMap hdr)) = decode (getHeaderBytes bsmem)
+    DataMap hdr <- either error return $ decode (getHeaderBytes bsmem)
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
     return $ GeoDB bsmem (hdr .: "database_type")
