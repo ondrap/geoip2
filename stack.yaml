@@ -3,4 +3,4 @@ packages:
 - '.'
 extra-deps:
 - 'reinterpret-cast-0.1.0'
-resolver: lts-3.4
+resolver: lts-5.2
