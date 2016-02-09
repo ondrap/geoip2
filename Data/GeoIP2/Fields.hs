@@ -1,10 +1,14 @@
 {-# OPTIONS_HADDOCK hide #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf        #-}
+{-# LANGUAGE CPP               #-}
 
 module Data.GeoIP2.Fields where
 
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative  ((<$>))
+#endif
+
 import           Control.Monad        (replicateM)
 import           Data.Serialize
 import           Data.Bits            (shift, (.&.))

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,14 +24,17 @@ module Data.GeoIP2 (
   , GeoResult(..)
 ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative    ((<$>), (<*>))
+#endif
+
 import           Control.Monad          (unless, when)
-import           Data.Serialize
 import qualified Data.ByteString        as BS
 import           Data.Int
 import           Data.IP                (IP (..), ipv4ToIPv6)
 import qualified Data.Map               as Map
 import           Data.Maybe             (fromMaybe, mapMaybe)
+import           Data.Serialize
 import qualified Data.Text              as T
 import           System.IO.MMap
 
@@ -74,7 +78,7 @@ openGeoDB geoFile = do
 
 
 
-rawGeoData :: Monad m => GeoDB -> IP -> m GeoField
+rawGeoData :: GeoDB -> IP -> Either String GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
   offset <- fromIntegral <$> getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
@@ -85,12 +89,12 @@ rawGeoData geodb addr = do
     -- Add caching
     dataAt offset =  case decode (BS.drop (offset + dataSectionStart) (geoMem geodb)) of
                           Right res -> return res
-                          Left err -> fail err
+                          Left err -> Left err
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
-      | otherwise = fail "Cannot search IPv6 address in IPv4 database"
+      | otherwise = Left "Cannot search IPv6 address in IPv4 database"
     resolvePointers (DataPointer ptr) = dataAt (fromIntegral ptr) >>= resolvePointers -- TODO - limit recursion?
     resolvePointers (DataMap obj) = DataMap . Map.fromList <$> mapM resolveTuple (Map.toList obj)
     resolvePointers (DataArray arr) = DataArray <$> mapM resolvePointers arr
@@ -108,12 +112,12 @@ data GeoResult = GeoResult {
   , geoSubdivisions  :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
--- | Search GeoIP database, monadic version (e.g. use with Maybe or Either)
-findGeoData :: Monad m =>
+-- | Search GeoIP database
+findGeoData ::
      GeoDB   -- ^ Db handle
   -> T.Text  -- ^ Language code (e.g. "en")
   -> IP      -- ^ IP address to search
-  -> m GeoResult -- ^ Result, if something is found
+  -> Either String GeoResult -- ^ Result, if something is found
 findGeoData geodb lang ip = do
   (DataMap res) <- rawGeoData geodb ip
   let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]
