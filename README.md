@@ -1,5 +1,7 @@
 GeoIP2 - library for accessing GeoIP2 database
 ==========
+[![Build Status](https://travis-ci.org/ondrap/geoip2.svg?branch=master)](https://travis-ci.org/ondrap/geoip2) [![Hackage](https://img.shields.io/hackage/v/geoip2.svg)](https://hackage.haskell.org/package/geoip2)
+
 
 GeoIP2 is a haskell binding to the MaxMind GeoIP2 database.
 It parses the database according to the MaxMind DB
