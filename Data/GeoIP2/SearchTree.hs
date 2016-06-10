@@ -25,7 +25,7 @@ readNode mem recordbits index =
     bytes = BS.take (fromIntegral bytecount) $ BS.drop (fromIntegral $ index * bytecount) mem
     num = BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes :: Word64
     -- 28 bits has a strange record format
-    left28 = num `shift` (-32) .|. (num .&. 0xf0000000)
+    left28 = num `shift` (-32) .|. (num .&. 0xf0000000) `shift` (-4)
   in case recordbits of
       28 -> (fromIntegral left28, fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
       _  -> (fromIntegral (num `shift` negate recordbits), fromIntegral (num .&. ((1 `shift` recordbits) - 1)))
