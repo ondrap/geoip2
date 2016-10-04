@@ -109,6 +109,7 @@ data GeoResult = GeoResult {
   , geoCountry       :: Maybe T.Text
   , geoLocation      :: Maybe (Double, Double)
   , geoCity          :: Maybe T.Text
+  , geoPostalCode    :: Maybe T.Text
   , geoSubdivisions  :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
@@ -129,4 +130,5 @@ findGeoData geodb lang ip = do
                      (res .:? "country" ..? "names" ..? lang)
                      ((,) <$> res .:? "location" ..? "latitude" <*> res .:? "location" ..? "longitude")
                      (res .:? "city" ..? "names" ..? lang)
+                     (res .:? "postal" ..? "code")
                      (fromMaybe [] subdivs)
