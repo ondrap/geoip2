@@ -16,7 +16,7 @@ module Data.GeoIP2 (
 
   -- * Opening the database
     GeoDB
-  , openGeoDB
+  , openGeoDB, openGeoDBBS
   , geoDbLanguages, geoDbType, geoDbDescription
   , geoDbAddrType, GeoIP(..)
   -- * Querying the database
@@ -67,6 +67,14 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
     bsmem <- mmapFileByteString geoFile Nothing
+    parseGeoDB bsmem
+
+-- | Open database from a bytestring, parse header and return a handle for search operations
+openGeoDBBS :: BS.ByteString -> IO GeoDB
+openGeoDBBS  = parseGeoDB
+
+parseGeoDB :: BS.ByteString -> IO GeoDB
+parseGeoDB bsmem = do
     DataMap hdr <- either error return $ decode (getHeaderBytes bsmem)
     when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
     unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
@@ -75,8 +83,6 @@ openGeoDB geoFile = do
                        (hdr .: "node_count") (hdr .: "record_size")
                        (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
                        (hdr .:? "description" ..? "en")
-
-
 
 rawGeoData :: GeoDB -> IP -> Either String GeoField
 rawGeoData geodb addr = do
