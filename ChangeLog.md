@@ -1,3 +1,6 @@
+# 0.3.0.0
+- Include timezone and accuracy in location results
+
 # 0.2.0.1
 - Fixed a problem with correct decoding of 28-bit offsets
 
