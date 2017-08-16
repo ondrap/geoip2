@@ -113,17 +113,17 @@ data GeoResult = GeoResult {
   , geoContinentCode :: Maybe T.Text
   , geoCountryISO    :: Maybe T.Text
   , geoCountry       :: Maybe T.Text
-  , geoLocation      :: Maybe (Double, Double)
+  , geoLocation      :: Maybe Location
   , geoCity          :: Maybe T.Text
   , geoPostalCode    :: Maybe T.Text
   , geoSubdivisions  :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
 data Location = Location {
-    locationAccuracy :: Int
     locationLatitude :: Double
-    locationLatitude :: Double
-    locationTimezone :: T.Text
+  , locationLongitude :: Double
+  , locationTimezone :: T.Text
+  , locationAccuracy :: Int
 } deriving (Show, Eq)
 
 -- | Search GeoIP database
@@ -141,7 +141,10 @@ findGeoData geodb lang ip = do
                      (res .:? "continent" ..? "code")
                      (res .:? "country" ..? "iso_code")
                      (res .:? "country" ..? "names" ..? lang)
-                     ((,) <$> res .:? "location" ..? "latitude" <*> res .:? "location" ..? "longitude")
+                     (Location <$> res .:? "location" ..? "latitude"
+                        <*> res .:? "location" ..? "longitude"
+                        <*> res .:? "location" ..? "time_zone"
+                        <*> res .:? "location" ..? "accuracy_radius")
                      (res .:? "city" ..? "names" ..? lang)
                      (res .:? "postal" ..? "code")
                      (fromMaybe [] subdivs)
