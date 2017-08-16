@@ -119,6 +119,13 @@ data GeoResult = GeoResult {
   , geoSubdivisions  :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
+data Location = Location {
+    locationAccuracy :: Int
+    locationLatitude :: Double
+    locationLatitude :: Double
+    locationTimezone :: T.Text
+} deriving (Show, Eq)
+
 -- | Search GeoIP database
 findGeoData ::
      GeoDB   -- ^ Db handle
