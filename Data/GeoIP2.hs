@@ -22,6 +22,7 @@ module Data.GeoIP2 (
   -- * Querying the database
   , findGeoData
   , GeoResult(..)
+  , Location(..)
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
