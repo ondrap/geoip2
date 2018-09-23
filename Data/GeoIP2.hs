@@ -134,7 +134,7 @@ findGeoData ::
   -> IP      -- ^ IP address to search
   -> Either String GeoResult -- ^ Result, if something is found
 findGeoData geodb lang ip = do
-  (DataMap res) <- rawGeoData geodb ip
+  res <- rawGeoData geodb ip >>= asMap
   let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]
       subdivs = mapMaybe (\s -> (,) <$> s .:? "iso_code" <*> s .:? "names" ..? lang) <$> subdivmap
 
@@ -149,3 +149,6 @@ findGeoData geodb lang ip = do
                      (res .:? "city" ..? "names" ..? lang)
                      (res .:? "postal" ..? "code")
                      (fromMaybe [] subdivs)
+  where
+    asMap (DataMap res) = return res
+    asMap _             = Left "rawGeoData returned something else than DataMap"
