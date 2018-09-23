@@ -1,3 +1,6 @@
+# 0.3.0.1
+- Fix compiling with GHC 8.6.1
+
 # 0.3.0.0
 - Include timezone and accuracy in location results
 
