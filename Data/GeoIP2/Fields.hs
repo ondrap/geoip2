@@ -84,7 +84,7 @@ parseNumber fsize = do
   return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
 instance Serialize GeoField where
-  put = undefined
+  put = error "Serialization not implemented"
   get = do
     control <- getWord8
     ftype <-  if | control .&. 0xe0 == 0 -> (+7) <$> getWord8
@@ -104,6 +104,7 @@ instance Serialize GeoField where
             | _fsize == 29 -> (29+) <$> parseNumber 1
             | _fsize == 30 -> (285+) <$> parseNumber 2
             | _fsize == 31 ->  (65821+) <$> parseNumber 3
+            | otherwise -> error "Shouldn't happen, limited to 5 bits"
 
     case ftype of
         1 -> return $ DataPointer fsize
