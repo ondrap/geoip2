@@ -27,7 +27,7 @@ module Data.GeoIP2 (
   , Location(..)
   -- * Internals
   , GeoField, GeoFieldT(..)
-  , findRawGeoData
+  , rawGeoData
   -- * Lenses 
   , _DataString, _DataDouble, _DataInt, _DataWord
   , _DataMap, _DataArray, _DataBool, _DataUnknown
@@ -111,6 +111,7 @@ openGeoDBBS bsmem = do
         pto 6 = Just GeoIPv6
         pto _ = Nothing
 
+-- | Search GeoIP database and return complete unparsed data        
 rawGeoData :: GeoDB -> IP -> Either String GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
@@ -183,7 +184,3 @@ geoNum = to fromNum . _Just
     fromNum (DataInt x) = Just (fromIntegral x)
     fromNum (DataWord x) = Just (fromIntegral x)
     fromNum _ = Nothing
-
--- | Search GeoIP database and return complete unparsed data
-findRawGeoData :: GeoDB -> IP -> Either String GeoField
-findRawGeoData goedb ip = rawGeoData goedb ip
