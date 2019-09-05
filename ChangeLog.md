@@ -1,6 +1,7 @@
 # 0.4.0.0
 - Added access to the complete parsed data
 - Added dependency on lens, exported some prisms for easy access
+- Small refactoring of functions, added more exports
 
 # 0.3.0.1
 - Fix compiling with GHC 8.6.1
