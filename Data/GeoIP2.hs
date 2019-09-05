@@ -23,6 +23,7 @@ module Data.GeoIP2 (
   , findGeoData
   , GeoResult(..)
   , Location(..)
+  , AS(..)
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -110,14 +111,19 @@ rawGeoData geodb addr = do
 
 -- | Result of a search query
 data GeoResult = GeoResult {
-    geoContinent     :: Maybe T.Text
-  , geoContinentCode :: Maybe T.Text
-  , geoCountryISO    :: Maybe T.Text
-  , geoCountry       :: Maybe T.Text
-  , geoLocation      :: Maybe Location
-  , geoCity          :: Maybe T.Text
-  , geoPostalCode    :: Maybe T.Text
-  , geoSubdivisions  :: [(T.Text, T.Text)]
+    geoContinent      :: Maybe T.Text
+  , geoContinentCode  :: Maybe T.Text
+  , geoCountryISO     :: Maybe T.Text
+  , geoCountry        :: Maybe T.Text
+  , geoLocation       :: Maybe Location
+  , geoCity           :: Maybe T.Text
+  , geoCityConfidence :: Maybe Int
+  , geoPostalCode     :: Maybe T.Text
+  , geoAS             :: Maybe AS
+  , geoISP            :: Maybe T.Text
+  , geoOrganization   :: Maybe T.Text
+  , geoUserType       :: Maybe T.Text
+  , geoSubdivisions   :: [(T.Text, T.Text)]
 } deriving (Show, Eq)
 
 data Location = Location {
@@ -125,6 +131,11 @@ data Location = Location {
   , locationLongitude :: Double
   , locationTimezone :: T.Text
   , locationAccuracy :: Int
+} deriving (Show, Eq)
+
+data AS = AS {
+    asNumber       :: Int
+  , asOrganization :: T.Text
 } deriving (Show, Eq)
 
 -- | Search GeoIP database
@@ -147,7 +158,13 @@ findGeoData geodb lang ip = do
                         <*> res .:? "location" ..? "time_zone"
                         <*> res .:? "location" ..? "accuracy_radius")
                      (res .:? "city" ..? "names" ..? lang)
+                     (res .:? "city" ..? "confidence")
                      (res .:? "postal" ..? "code")
+                     (AS <$> res .:? "traits" ..? "autonomous_system_number"
+                         <*> res .:? "traits" ..? "autonomous_system_organization")
+                     (res .:? "traits" ..? "isp")
+                     (res .:? "traits" ..? "organization")
+                     (res .:? "traits" ..? "user_type")
                      (fromMaybe [] subdivs)
   where
     asMap (DataMap res) = return res
