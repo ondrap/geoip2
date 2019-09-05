@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE CPP               #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE StandaloneDeriving     #-}
 
 module Data.GeoIP2.Fields where
 
@@ -15,67 +17,46 @@ import           Data.Bits            (shift, (.&.))
 import qualified Data.ByteString      as BS
 import           Data.Int
 import qualified Data.Map             as Map
-import           Data.Maybe           (fromMaybe)
 import           Data.ReinterpretCast (wordToDouble)
 import qualified Data.Text            as T
 import           Data.Text.Encoding   (decodeUtf8)
 import           Data.Word
+import           Data.Void
+import           Control.Lens.TH      (makePrisms)
 
-data GeoField =
-    DataPointer Int64
+data GeoFieldT a =
+    DataPointer a
   | DataString !T.Text
   | DataDouble Double
   | DataInt Int64
   | DataWord Word64
-  | DataMap (Map.Map GeoField GeoField)
-  | DataArray [GeoField]
+  | DataMap (Map.Map (GeoFieldT a) (GeoFieldT a))
+  | DataArray [GeoFieldT a]
   | DataBool Bool
   | DataUnknown Word8 Int64
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+-- Field with pointers resolved
+type GeoField = GeoFieldT Void
+deriving instance Show GeoField
+-- Raw field with pointers
+type GeoFieldRaw = GeoFieldT Int64
 
-class GeoConvertable a where
-  cvtGeo :: GeoField -> Maybe a
+makePrisms ''GeoFieldT
 
-(..?) :: GeoConvertable a => Maybe (Map.Map GeoField GeoField) -> T.Text -> Maybe a
-(Just geo) ..? name = Map.lookup (DataString name) geo >>= cvtGeo
-_ ..? _ = Nothing
-
-(.:?) :: GeoConvertable a => Map.Map GeoField GeoField -> T.Text -> Maybe a
-geo .:? name = Map.lookup (DataString name) geo >>= cvtGeo
-
-(.:) :: GeoConvertable a => Map.Map GeoField GeoField  -> T.Text -> a
-geo .: key = fromMaybe (error "Cannot find key.") (geo .:? key)
-
-instance GeoConvertable (Map.Map GeoField GeoField) where
-  cvtGeo (DataMap obj) = Just obj
-  cvtGeo _ = Nothing
-instance GeoConvertable [GeoField] where
-  cvtGeo (DataArray arr) = Just arr
-  cvtGeo _ = Nothing
-instance GeoConvertable T.Text where
-  cvtGeo (DataString txt) = Just txt
-  cvtGeo _ = Nothing
-instance GeoConvertable Double where
-  cvtGeo (DataDouble d) = Just d
-  cvtGeo _ = Nothing
-instance GeoConvertable Int where
-  cvtGeo (DataInt i) = Just $ fromIntegral i
-  cvtGeo (DataWord w) = Just $ fromIntegral w
-  cvtGeo _ = Nothing
-instance GeoConvertable Int64 where
-  cvtGeo (DataInt i) = Just $ fromIntegral i
-  cvtGeo (DataWord w) = Just $ fromIntegral w
-  cvtGeo _ = Nothing
-instance GeoConvertable Word where
-  cvtGeo (DataInt i) = Just $ fromIntegral i
-  cvtGeo (DataWord w) = Just $ fromIntegral w
-  cvtGeo _ = Nothing
-instance GeoConvertable a => GeoConvertable [a] where
-  cvtGeo (DataArray arr) = mapM cvtGeo arr
-  cvtGeo _ = Nothing
-instance GeoConvertable Bool where
-  cvtGeo (DataBool b) = Just b
-  cvtGeo _ = Nothing
+-- | Go through the pointers and try to resolve them; we won't define instance of Applicative given that the 'key' to the Map is parametrized
+traversePtr :: (Ord a, Applicative m) => (Int64 -> m (GeoFieldT a)) -> GeoFieldRaw -> m (GeoFieldT a)
+traversePtr _ (DataString t) = pure (DataString t)
+traversePtr _ (DataDouble t) = pure (DataDouble t)
+traversePtr _ (DataInt t) = pure (DataInt t)
+traversePtr _ (DataWord t) = pure (DataWord t)
+traversePtr _ (DataBool t) = pure (DataBool t)
+traversePtr _ (DataUnknown a b) = pure (DataUnknown a b)
+-- For map we have to traverse over both keys and values...
+traversePtr f (DataMap dmap) = DataMap . Map.fromList <$> traverse travBoth (Map.toList dmap)
+  where
+    travBoth (key, val) = (,) <$> traversePtr f key <*> traversePtr f val
+traversePtr f (DataArray darr) = DataArray <$> traverse (traversePtr f) darr
+traversePtr f (DataPointer a) = f a
 
 -- | Parse number of given length
 parseNumber :: Num a => Int64 -> Get a
@@ -84,6 +65,12 @@ parseNumber fsize = do
   return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
 instance Serialize GeoField where
+  put = error "Serialization not implemented"
+  get = do
+    field <- get
+    traversePtr (\_ -> fail "Pointer not accepted at this position") field
+
+instance Serialize GeoFieldRaw where
   put = error "Serialization not implemented"
   get = do
     control <- getWord8

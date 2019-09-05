@@ -38,7 +38,7 @@ getDataOffset (mem, nodeCount, recordSize) startbits =
     getnode _ index
       | index == nodeCount = Left "Information for address does not exist."
       | index > nodeCount = return $ index - nodeCount - 16
-    getnode [] _ = Left "IP address too short????"
+    getnode [] _ = Left "IP address too short"
     getnode (bit:rest) index = getnode rest nextOffset
       where
         (left, right) = readNode mem recordSize index

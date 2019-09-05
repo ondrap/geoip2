@@ -2,6 +2,8 @@
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Data.GeoIP2 (
   -- * Library description
@@ -23,6 +25,12 @@ module Data.GeoIP2 (
   , findGeoData
   , GeoResult(..)
   , Location(..)
+  -- * Internals
+  , GeoField, GeoFieldT(..)
+  , findRawGeoData
+  -- * Lenses 
+  , _DataString, _DataDouble, _DataInt, _DataWord
+  , _DataMap, _DataArray, _DataBool, _DataUnknown
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -33,17 +41,25 @@ import           Control.Monad          (unless, when)
 import qualified Data.ByteString        as BS
 import           Data.Int
 import           Data.IP                (IP (..), ipv4ToIPv6)
-import qualified Data.Map               as Map
-import           Data.Maybe             (fromMaybe, mapMaybe)
+import           Data.Maybe             (mapMaybe)
 import           Data.Serialize
 import qualified Data.Text              as T
 import           System.IO.MMap
+import           Control.Lens           (ix, (^?), _Just, to, (^..), Traversal', Fold, prism')
+import           Control.Exception      (throwIO, Exception)
 
 import           Data.GeoIP2.Fields
 import           Data.GeoIP2.SearchTree
 
 -- | Address type stored in database
 data GeoIP = GeoIPv6 | GeoIPv4 deriving (Eq, Show)
+
+data DecodeException = DecodeException String
+  deriving (Show)
+instance Exception DecodeException
+
+throwErr :: String -> IO a
+throwErr = throwIO . DecodeException
 
 -- | Handle for search operations
 data GeoDB = GeoDB {
@@ -68,45 +84,52 @@ getHeaderBytes = lastsubstring "\xab\xcd\xefMaxMind.com"
 openGeoDB :: FilePath -> IO GeoDB
 openGeoDB geoFile = do
     bsmem <- mmapFileByteString geoFile Nothing
-    parseGeoDB bsmem
+    openGeoDBBS bsmem
 
--- | Open database from a bytestring, parse header and return a handle for search operations
 openGeoDBBS :: BS.ByteString -> IO GeoDB
-openGeoDBBS  = parseGeoDB
+openGeoDBBS bsmem = do
+    hdr <- either throwErr return $ decode (getHeaderBytes bsmem)
+    when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $ 
+      throwErr "Unsupported database version, only v2 supported."
+    unless (hdr ^? key "record_size" . geoNum `elem` (Just <$> [24, 28, 32 :: Int])) $
+      throwErr "Record size not supported."
 
-parseGeoDB :: BS.ByteString -> IO GeoDB
-parseGeoDB bsmem = do
-    DataMap hdr <- either error return $ decode (getHeaderBytes bsmem)
-    when (hdr .: "binary_format_major_version" /= (2 :: Int)) $ error "Unsupported database version, only v2 supported."
-    unless (hdr .: "record_size" `elem` [24, 28, 32 :: Int]) $ error "Record size not supported."
-    return $ GeoDB bsmem (hdr .: "database_type")
-                       (fromMaybe [] $ hdr .:? "languages")
-                       (hdr .: "node_count") (hdr .: "record_size")
-                       (if (hdr .: "ip_version") == (4 :: Int) then GeoIPv4 else GeoIPv6)
-                       (hdr .:? "description" ..? "en")
+    let res = GeoDB bsmem <$> hdr ^? key "database_type" . _DataString
+                          <*> pure (hdr ^.. key "languages" . _DataArray . traverse . _DataString)
+                          <*> hdr ^? key "node_count" . geoNum
+                          <*> hdr ^? key "record_size" . geoNum
+                          <*> hdr ^? key "ip_version" . toVersion
+                          <*> pure (hdr ^? key "descritpion" . key "en" . _DataString)
+    maybe (throwErr "Error decoding header") return res
+  where
+    toVersion = geoNum . prism' pfrom pto
+      where
+        pfrom :: GeoIP -> Int
+        pfrom GeoIPv4 = 4
+        pfrom GeoIPv6 = 6
+        pto 4 = Just GeoIPv4
+        pto 6 = Just GeoIPv6
+        pto _ = Nothing
 
 rawGeoData :: GeoDB -> IP -> Either String GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
-  offset <- fromIntegral <$> getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
-  basedata <- dataAt offset
-  resolvePointers basedata
+  offset <- getDataOffset (geoMem geodb, geoDbNodeCount geodb, geoDbRecordSize geodb) bits
+  strictDataAt offset
   where
     dataSectionStart = (geoDbRecordSize geodb `div` 4) * fromIntegral (geoDbNodeCount geodb) + 16
-    -- Add caching
-    dataAt offset =  case decode (BS.drop (offset + dataSectionStart) (geoMem geodb)) of
-                          Right res -> return res
-                          Left err -> Left err
+    dataSection = BS.drop dataSectionStart (geoMem geodb)
+    
+    strictDataAt :: Int64 -> Either String GeoField
+    strictDataAt offset = do
+      raw <- decode (BS.drop (fromIntegral offset) dataSection)
+      traversePtr (strictDataAt . fromIntegral) raw
+  
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv4 addrv4) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits $ IPv6 (ipv4ToIPv6 addrv4)
       | otherwise = Left "Cannot search IPv6 address in IPv4 database"
-    resolvePointers (DataPointer ptr) = dataAt (fromIntegral ptr) >>= resolvePointers -- TODO - limit recursion?
-    resolvePointers (DataMap obj) = DataMap . Map.fromList <$> mapM resolveTuple (Map.toList obj)
-    resolvePointers (DataArray arr) = DataArray <$> mapM resolvePointers arr
-    resolvePointers x = return x
-    resolveTuple (a,b) = (,) <$> resolvePointers a <*> resolvePointers b
 
 -- | Result of a search query
 data GeoResult = GeoResult {
@@ -124,7 +147,7 @@ data Location = Location {
     locationLatitude :: Double
   , locationLongitude :: Double
   , locationTimezone :: T.Text
-  , locationAccuracy :: Int
+  , locationAccuracy :: Maybe Int
 } deriving (Show, Eq)
 
 -- | Search GeoIP database
@@ -134,21 +157,33 @@ findGeoData ::
   -> IP      -- ^ IP address to search
   -> Either String GeoResult -- ^ Result, if something is found
 findGeoData geodb lang ip = do
-  res <- rawGeoData geodb ip >>= asMap
-  let subdivmap = res .:? "subdivisions" :: Maybe [Map.Map GeoField GeoField]
-      subdivs = mapMaybe (\s -> (,) <$> s .:? "iso_code" <*> s .:? "names" ..? lang) <$> subdivmap
+  res <- rawGeoData geodb ip
+  let subdivmap = res ^.. key "subdivisions" . _DataArray . traverse
+      subdivs = mapMaybe (\s -> (,) <$> s ^? key "iso_code"  . _DataString
+                                    <*> s ^? key "names" . key lang . _DataString) subdivmap
 
-  return $ GeoResult (res .:? "continent" ..? "names" ..? lang)
-                     (res .:? "continent" ..? "code")
-                     (res .:? "country" ..? "iso_code")
-                     (res .:? "country" ..? "names" ..? lang)
-                     (Location <$> res .:? "location" ..? "latitude"
-                        <*> res .:? "location" ..? "longitude"
-                        <*> res .:? "location" ..? "time_zone"
-                        <*> res .:? "location" ..? "accuracy_radius")
-                     (res .:? "city" ..? "names" ..? lang)
-                     (res .:? "postal" ..? "code")
-                     (fromMaybe [] subdivs)
+  return $ GeoResult (res ^? key "continent" . key "names" . key lang . _DataString)
+                     (res ^? key "continent" . key "code" . _DataString)
+                     (res ^? key "country" . key "iso_code" . _DataString)
+                     (res ^? key "country" . key "names" . key lang . _DataString)
+                     (Location <$> res ^? key "location" . key "latitude" . _DataDouble
+                              <*> res ^? key "location" . key "longitude" . _DataDouble
+                              <*> res ^? key "location" . key "time_zone" . _DataString
+                              <*> pure (res ^? key "location" . key "accuracy_radius" . geoNum))
+                     (res ^? key "city" . key "names" . key lang . _DataString)
+                     (res ^? key "postal" . key "code" . _DataString)
+                     subdivs
+
+key :: T.Text -> Traversal' GeoField GeoField
+key k = _DataMap . ix (DataString k)
+
+geoNum :: Num b => Fold GeoField b
+geoNum = to fromNum . _Just
   where
-    asMap (DataMap res) = return res
-    asMap _             = Left "rawGeoData returned something else than DataMap"
+    fromNum (DataInt x) = Just (fromIntegral x)
+    fromNum (DataWord x) = Just (fromIntegral x)
+    fromNum _ = Nothing
+
+-- | Search GeoIP database and return complete unparsed data
+findRawGeoData :: GeoDB -> IP -> Either String GeoField
+findRawGeoData goedb ip = rawGeoData goedb ip
