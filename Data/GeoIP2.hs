@@ -102,7 +102,7 @@ openGeoDBBS bsmem = do
                           <*> hdr ^? key "node_count" . geoNum
                           <*> hdr ^? key "record_size" . geoNum
                           <*> hdr ^? key "ip_version" . toVersion
-                          <*> pure (hdr ^? key "descritpion" . key "en" . _DataString)
+                          <*> pure (hdr ^? key "description" . key "en" . _DataString)
     maybe (Left "Error decoding header") return res
   where
     toVersion = geoNum . prism' pfrom pto
