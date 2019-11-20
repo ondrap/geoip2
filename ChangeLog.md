@@ -1,3 +1,6 @@
+# 0.4.0.1
+- Fixed typo
+
 # 0.4.0.0
 - Added access to the complete parsed data
 - Added dependency on lens, exported some prisms for easy access
