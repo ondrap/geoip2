@@ -30,7 +30,7 @@ module Data.GeoIP2 (
   -- * Internals
   , GeoField, GeoFieldT(..)
   , rawGeoData
-  -- * Lenses 
+  -- * Lenses
   , _DataString, _DataDouble, _DataInt, _DataWord
   , _DataMap, _DataArray, _DataBool, _DataUnknown
   , key
@@ -92,7 +92,7 @@ openGeoDB geoFile = do
 openGeoDBBS :: BS.ByteString -> Either String GeoDB
 openGeoDBBS bsmem = do
     hdr <- decode (getHeaderBytes bsmem)
-    when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $ 
+    when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $
       Left "Unsupported database version, only v2 supported."
     unless (hdr ^? key "record_size" . geoNum `elem` (Just <$> [24, 28, 32 :: Int])) $
       Left "Record size not supported."
@@ -114,7 +114,7 @@ openGeoDBBS bsmem = do
         pto 6 = Just GeoIPv6
         pto _ = Nothing
 
--- | Search GeoIP database and return complete unparsed data        
+-- | Search GeoIP database and return complete unparsed data
 rawGeoData :: GeoDB -> IP -> Either String GeoField
 rawGeoData geodb addr = do
   bits <- coerceAddr
@@ -123,12 +123,12 @@ rawGeoData geodb addr = do
   where
     dataSectionStart = (geoDbRecordSize geodb `div` 4) * fromIntegral (geoDbNodeCount geodb) + 16
     dataSection = BS.drop dataSectionStart (geoMem geodb)
-    
+
     strictDataAt :: Int64 -> Either String GeoField
     strictDataAt offset = do
       raw <- decode (BS.drop (fromIntegral offset) dataSection)
       traversePtr (strictDataAt . fromIntegral) raw
-  
+
     coerceAddr
       | (IPv4 _) <- addr, GeoIPv4 <- geoDbAddrType geodb = return $ ipToBits addr
       | (IPv6 _) <- addr, GeoIPv6 <- geoDbAddrType geodb = return $ ipToBits addr
@@ -153,6 +153,7 @@ data GeoResult = GeoResult {
   , geoPostalCode     :: Maybe T.Text
   , geoAS             :: Maybe AS
   , geoISP            :: Maybe T.Text
+  , geoDomain         :: Maybe T.Text
   , geoOrganization   :: Maybe T.Text
   , geoUserType       :: Maybe T.Text
   , geoSubdivisions   :: [(T.Text, T.Text)]
@@ -194,6 +195,7 @@ findGeoData geodb lang ip = do
     , geoAS = AS <$> res ^? key "traits" . key "autonomous_system_number" . geoNum
                  <*> res ^? key "traits" . key "autonomous_system_organization" . _DataString
     , geoISP = res ^? key "traits" . key "isp" . _DataString
+    , geoDomain = res ^? key "traits" . key "domain" . _DataString
     , geoOrganization = res ^? key "traits" . key "organization" . _DataString
     , geoUserType = res ^? key "traits" . key "user_type" . _DataString
     , geoSubdivisions = subdivs
