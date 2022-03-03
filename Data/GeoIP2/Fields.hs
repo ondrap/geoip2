@@ -108,7 +108,7 @@ instance Serialize GeoFieldRaw where
         8 -> DataWord <$> parseNumber fsize
         9 -> DataWord <$> parseNumber fsize
         11 -> DataArray <$> replicateM (fromIntegral fsize) get
-        14 -> return $ DataBool (fsize == 0)
+        14 -> return $ DataBool (fsize == 1)
         _ -> do
           _ <- getBytes (fromIntegral fsize)
           return $ DataUnknown ftype fsize
