@@ -1,3 +1,7 @@
+# 0.4.1.1
+
+- Fix DataBool handling (#14)
+
 # 0.4.1.0
 - Added domain field
 
