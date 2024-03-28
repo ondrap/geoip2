@@ -192,8 +192,8 @@ findGeoData geodb lang ip = do
     , geoCity = res ^? key "city" . key "names" . key lang . _DataString
     , geoCityConfidence = res ^? key "city" . key "confidence" . geoNum
     , geoPostalCode = res ^? key "postal" . key "code" . _DataString
-    , geoAS = AS <$> res ^? key "traits" . key "autonomous_system_number" . geoNum
-                 <*> res ^? key "traits" . key "autonomous_system_organization" . _DataString
+    , geoAS = AS <$> res ^? key "autonomous_system_number" . geoNum
+                 <*> res ^? key "autonomous_system_organization" . _DataString
     , geoISP = res ^? key "traits" . key "isp" . _DataString
     , geoDomain = res ^? key "traits" . key "domain" . _DataString
     , geoOrganization = res ^? key "traits" . key "organization" . _DataString

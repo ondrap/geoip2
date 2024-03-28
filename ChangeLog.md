@@ -1,3 +1,7 @@
+# 0.4.1.2
+
+- Fix autonomous_system decoding
+
 # 0.4.1.1
 
 - Fix DataBool handling (#14)
