@@ -4,6 +4,9 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE StandaloneDeriving     #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ExistentialQuantification     #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module Data.GeoIP2.Fields where
 
@@ -13,6 +16,7 @@ import           Control.Applicative  ((<$>))
 
 import           Control.Monad        (replicateM)
 import           Data.Serialize
+import           Data.Reflection      (Given, given)
 import           Data.Bits            (shift, (.&.))
 import qualified Data.ByteString      as BS
 import           Data.Int
@@ -64,11 +68,15 @@ parseNumber fsize = do
   bytes <- getBytes (fromIntegral fsize)
   return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
-instance Serialize GeoField where
+data ReadPointer = ReadPointer (forall a . Serialize (GeoFieldT a) => Int64 -> Either String (GeoFieldT a))
+
+instance Given ReadPointer => Serialize GeoField where
   put = error "Serialization not implemented"
   get = do
     field <- get
-    traversePtr (\_ -> fail "Pointer not accepted at this position") field
+    traversePtr (either fail pure . readPtr) field
+    where ReadPointer readPtr = given
+
 
 instance Serialize GeoFieldRaw where
   put = error "Serialization not implemented"

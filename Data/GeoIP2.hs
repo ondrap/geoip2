@@ -47,6 +47,7 @@ import           Data.Int
 import           Data.IP                (IP (..), ipv4ToIPv6)
 import           Data.Maybe             (mapMaybe)
 import           Data.Serialize
+import           Data.Reflection        (give)
 import qualified Data.Text              as T
 import           System.IO.MMap
 import           Control.Lens           (ix, (^?), _Just, to, (^..), Traversal', Fold, prism')
@@ -91,7 +92,8 @@ openGeoDB geoFile = do
 -- | Open database from a bytestring
 openGeoDBBS :: BS.ByteString -> Either String GeoDB
 openGeoDBBS bsmem = do
-    hdr <- decode (getHeaderBytes bsmem)
+    let headerBytes = (getHeaderBytes bsmem)
+    hdr <- give (ReadPointer $ \n -> decode $ BS.drop (fromIntegral n ) headerBytes) $ decode headerBytes
     when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $
       Left "Unsupported database version, only v2 supported."
     unless (hdr ^? key "record_size" . geoNum `elem` (Just <$> [24, 28, 32 :: Int])) $
