@@ -64,12 +64,6 @@ parseNumber fsize = do
   bytes <- getBytes (fromIntegral fsize)
   return $ BS.foldl' (\acc new -> fromIntegral new + 256 * acc) 0 bytes
 
-instance Serialize GeoField where
-  put = error "Serialization not implemented"
-  get = do
-    field <- get
-    traversePtr (\_ -> fail "Pointer not accepted at this position") field
-
 instance Serialize GeoFieldRaw where
   put = error "Serialization not implemented"
   get = do

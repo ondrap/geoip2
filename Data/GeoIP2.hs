@@ -91,7 +91,8 @@ openGeoDB geoFile = do
 -- | Open database from a bytestring
 openGeoDBBS :: BS.ByteString -> Either String GeoDB
 openGeoDBBS bsmem = do
-    hdr <- decode (getHeaderBytes bsmem)
+    hdr <- decode headerBytes >>= traversePtr strictHeaderAt
+
     when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $
       Left "Unsupported database version, only v2 supported."
     unless (hdr ^? key "record_size" . geoNum `elem` (Just <$> [24, 28, 32 :: Int])) $
@@ -105,6 +106,13 @@ openGeoDBBS bsmem = do
                           <*> pure (hdr ^? key "description" . key "en" . _DataString)
     maybe (Left "Error decoding header") return res
   where
+    headerBytes = getHeaderBytes bsmem
+
+    strictHeaderAt :: Int64 -> Either String GeoField
+    strictHeaderAt offset = do
+      raw <- decode (BS.drop (fromIntegral offset) headerBytes)
+      traversePtr (strictHeaderAt . fromIntegral) raw
+
     toVersion = geoNum . prism' pfrom pto
       where
         pfrom :: GeoIP -> Int
