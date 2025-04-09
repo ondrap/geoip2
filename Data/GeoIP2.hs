@@ -91,7 +91,7 @@ openGeoDB geoFile = do
 -- | Open database from a bytestring
 openGeoDBBS :: BS.ByteString -> Either String GeoDB
 openGeoDBBS bsmem = do
-    hdr <- decode headerBytes >>= traversePtr strictHeaderAt
+    hdr <- strictHeaderAt 0
 
     when (hdr ^? key "binary_format_major_version" . geoNum /= (Just 2 :: Maybe Int)) $
       Left "Unsupported database version, only v2 supported."
