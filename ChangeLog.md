@@ -1,3 +1,7 @@
+# 0.4.1.3
+
+- Allow pointers in header data
+
 # 0.4.1.2
 
 - Fix autonomous_system decoding
